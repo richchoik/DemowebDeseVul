@@ -121,6 +121,7 @@ namespace Demoweb.Controllers
         [HttpPost]
         public ActionResult Signup(SignupModel model)
         {
+            string payload;
             if (model == null || string.IsNullOrEmpty(model.Username) || string.IsNullOrEmpty(model.Password))
             {
                 return Json(new { success = false, message = "Invalid input" });
