@@ -2,10 +2,16 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.Serialization;
 using System.Web.Mvc;
+using System.Xml;
+using System.Xml.Serialization;
 using Demoweb.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Windows.Data; 
+using System.Data.Services.Internal;
+using System.Diagnostics;
 
 namespace Demoweb.Controllers
 {
@@ -51,8 +57,8 @@ namespace Demoweb.Controllers
 
                 // Parse JSON để kiểm tra cấu trúc
                 JObject jsonObject = JObject.Parse(jsonPayload);
-                JToken usernameToken = jsonObject["username"];
-                JToken passwordToken = jsonObject["password"];
+                JToken usernameToken = jsonObject["Username"] ?? jsonObject["username"];
+                JToken passwordToken = jsonObject["Password"] ?? jsonObject["password"];
 
                 System.Diagnostics.Debug.WriteLine("usernameToken: " + usernameToken?.ToString());
                 System.Diagnostics.Debug.WriteLine("passwordToken: " + passwordToken?.ToString());
@@ -96,7 +102,6 @@ namespace Demoweb.Controllers
                     Session["Username"] = user.Username;
                     return Json(new { success = true, message = "Login successful" });
                 }
-
                 return Json(new { success = false, message = "Invalid credentials" });
             }
             catch (Exception ex)
