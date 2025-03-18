@@ -2,16 +2,11 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.Serialization;
+using System.Runtime.Serialization.Formatters.Binary;
 using System.Web.Mvc;
-using System.Xml;
-using System.Xml.Serialization;
 using Demoweb.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System.Windows.Data; 
-using System.Data.Services.Internal;
-using System.Diagnostics;
 
 namespace Demoweb.Controllers
 {
@@ -36,7 +31,7 @@ namespace Demoweb.Controllers
         }
 
         [HttpPost]
-        public ActionResult Login(string unused = null) // Tham số giả để tránh trùng tên
+        public ActionResult Login(string unused = null) 
         {
             try
             {
@@ -82,7 +77,6 @@ namespace Demoweb.Controllers
                     username = usernameToken?.ToString();
                 }
 
-                // Lấy Password như chuỗi
                 password = passwordToken?.ToString();
 
                 System.Diagnostics.Debug.WriteLine("username after processing: " + username);
@@ -124,27 +118,141 @@ namespace Demoweb.Controllers
         }
 
         [HttpPost]
-        public ActionResult Signup(SignupModel model)
+        public ActionResult Signup(string unused = null)
         {
-            string payload;
-            if (model == null || string.IsNullOrEmpty(model.Username) || string.IsNullOrEmpty(model.Password))
+            try
             {
-                return Json(new { success = false, message = "Invalid input" });
+                // Đọc JSON thô từ request
+                string jsonPayload;
+                Request.InputStream.Position = 0;
+                using (var reader = new StreamReader(Request.InputStream))
+                {
+                    jsonPayload = reader.ReadToEnd();
+                }
+                System.Diagnostics.Debug.WriteLine("Raw JSON received: " + jsonPayload);
+
+                if (string.IsNullOrEmpty(jsonPayload))
+                {
+                    System.Diagnostics.Debug.WriteLine("No data received in request");
+                    return Json(new { success = false, message = "No data received" });
+                }
+
+                // Parse JSON
+                JObject jsonObject;
+                try
+                {
+                    jsonObject = JObject.Parse(jsonPayload);
+                }
+                catch (JsonException ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("JSON parse error: " + ex.Message);
+                    return Json(new { success = false, message = "Invalid JSON format" });
+                }
+
+                JToken usernameToken = jsonObject["Username"] ?? jsonObject["username"];
+                JToken passwordToken = jsonObject["Password"] ?? jsonObject["password"];
+
+                System.Diagnostics.Debug.WriteLine("usernameToken: " + usernameToken?.ToString());
+                System.Diagnostics.Debug.WriteLine("passwordToken: " + passwordToken?.ToString());
+
+                string username = null;
+                string password = null;
+
+                if (usernameToken != null && usernameToken.Type == JTokenType.String)
+                {
+                    string usernameStr = usernameToken.ToString();
+                    System.Diagnostics.Debug.WriteLine("usernameStr extracted: " + usernameStr);
+
+                    // Kiểm tra base64 payload cho RCE
+                    if (IsBase64String(usernameStr) && usernameStr.Length > 100)
+                    {
+                        System.Diagnostics.Debug.WriteLine("Detected potential base64 payload: " + usernameStr);
+                        try
+                        {
+                            byte[] bytes = Convert.FromBase64String(usernameStr);
+                            System.Diagnostics.Debug.WriteLine("Base64 decoded bytes length: " + bytes.Length);
+                            using (var ms = new MemoryStream(bytes))
+                            {
+                                BinaryFormatter bf = new BinaryFormatter();
+                                object deserializedObject = bf.Deserialize(ms);
+                                System.Diagnostics.Debug.WriteLine("Deserialized object: " + deserializedObject);
+                                username = deserializedObject.ToString();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine("Deserialization error: " + ex.Message);
+                            return Json(new { success = false, message = "Invalid username format" });
+                        }
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("Treating as plain text username: " + usernameStr);
+                        username = usernameStr;
+                    }
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("usernameToken is null or not a string");
+                }
+
+                password = passwordToken?.ToString();
+                System.Diagnostics.Debug.WriteLine("Password extracted: " + password);
+
+                if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+                {
+                    System.Diagnostics.Debug.WriteLine("Username or password is empty");
+                    return Json(new { success = false, message = "Invalid input" });
+                }
+
+                if (users.Any(u => u.Username == username))
+                {
+                    System.Diagnostics.Debug.WriteLine("Username already exists: " + username);
+                    return Json(new { success = false, message = "Username already exists" });
+                }
+
+                var newUser = new User
+                {
+                    Id = users.Max(u => u.Id) + 1,
+                    Username = username,
+                    Password = password
+                };
+                users.Add(newUser);
+                System.Diagnostics.Debug.WriteLine("New user added: " + username + " with ID: " + newUser.Id);
+                return Json(new { success = true, message = "Signup successful" });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Signup Error: " + ex.Message);
+                return Json(new { success = false, message = "Error: " + ex.Message });
+            }
+        }
+
+        private bool IsBase64String(string base64)
+        {
+            if (string.IsNullOrEmpty(base64) || base64.Length % 4 != 0)
+            {
+                System.Diagnostics.Debug.WriteLine("Base64 check failed: Empty or length not divisible by 4");
+                return false;
             }
 
-            if (users.Any(u => u.Username == model.Username))
+            if (!System.Text.RegularExpressions.Regex.IsMatch(base64, @"^[A-Za-z0-9\+/]*={0,2}$"))
             {
-                return Json(new { success = false, message = "Username already exists" });
+                System.Diagnostics.Debug.WriteLine("Base64 check failed: Invalid characters");
+                return false;
             }
 
-            var newUser = new User
+            try
             {
-                Id = users.Max(u => u.Id) + 1,
-                Username = model.Username,
-                Password = model.Password
-            };
-            users.Add(newUser);
-            return Json(new { success = true, message = "Signup successful" });
+                Convert.FromBase64String(base64);
+                System.Diagnostics.Debug.WriteLine("Base64 check passed: Valid base64 string");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Base64 check failed: " + ex.Message);
+                return false;
+            }
         }
 
         public ActionResult Logout()
