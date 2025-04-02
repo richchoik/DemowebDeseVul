@@ -68,4 +68,15 @@
 <br> ![{18EE209D-DCE6-497D-9973-3014F02AF9AE}](https://github.com/user-attachments/assets/431c2abe-496b-49f2-8526-9d7f38d338c6)
 <br> - F10 một hai phát nữa thì ta đã mở được `calc.exe` rồi.
 <br> ![{BEFB13ED-1F48-4BCA-A8AB-4C29FEB20190}](https://github.com/user-attachments/assets/bea7bd52-b1fa-4717-9335-1563b32b2765)
-
+###### Đối với chức năng signup (payload thứ 2)
+<br> Tóm lại thì ta có cái chain như này :v 
+```
+BinaryFormatter.Deserialize() 
+-> ObjectReader.Deserialize() 
+    -> ObjectManager.RaiseDeserializationEvent() 
+        -> SortedSet.OnDeserialization()
+            -> SortedSet.Add()
+                -> SortedSet.AddIfNotPresent()
+                    -> ComparisonComparer.Compare()
+                        -> Process.Start()
+```
