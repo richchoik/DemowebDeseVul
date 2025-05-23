@@ -3,7 +3,6 @@ using System.IO;
 using System.Web;
 using Newtonsoft.Json.Linq;
 using System.Linq;
-using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using System.Security;
 using System.Security.Policy;
@@ -12,172 +11,162 @@ using System.Reflection;
 
 namespace Demoweb.Middleware
 {
-    public class DeserializationAttackDetectionMiddleware : IHttpModule
-    {
-        private AppDomain _sandboxDomain;
+    // public class DeserializationAttackDetectionMiddleware : IHttpModule
+    // {
+    //     private AppDomain _sandboxDomain;
+    //
+    //     public void Init(HttpApplication context)
+    //     {
+    //         context.BeginRequest += (sender, e) => CheckRequest(context);
+    //         Console.WriteLine($"[{DateTime.Now}] Middleware initialized");
+    //     }
+    //
+    //     public void Dispose()
+    //     {
+    //         if (_sandboxDomain != null && _sandboxDomain != AppDomain.CurrentDomain)
+    //         {
+    //             AppDomain.Unload(_sandboxDomain);
+    //         }
+    //     }
+    //
+    //     private void CheckRequest(HttpApplication context)
+    //     {
+    //         Console.WriteLine($"[{DateTime.Now}] Checking request: {context.Request.Url}");
+    //         var request = context.Request;
+    //
+    //         // Chỉ xử lý các yêu cầu POST gửi đến Login, Signup, hoặc TestSandbox
+    //         if (request.HttpMethod == "POST" &&
+    //             (request.Url.AbsolutePath.EndsWith("Login", StringComparison.OrdinalIgnoreCase) ||
+    //              request.Url.AbsolutePath.EndsWith("Signup", StringComparison.OrdinalIgnoreCase) ||
+    //              request.Url.AbsolutePath.EndsWith("TestSandbox", StringComparison.OrdinalIgnoreCase)))
+    //         {
+    //             try
+    //             {
+    //                 // Đọc dữ liệu thô từ request
+    //                 string jsonPayload;
+    //                 request.InputStream.Position = 0;
+    //                 using (var reader = new StreamReader(request.InputStream))
+    //                 {
+    //                     jsonPayload = reader.ReadToEnd();
+    //                 }
+    //
+    //                 Console.WriteLine($"[{DateTime.Now}] Raw Payload: {jsonPayload}");
+    //
+    //                 if (!string.IsNullOrEmpty(jsonPayload))
+    //                 {
+    //                     // Thử parse thành JSON
+    //                     JObject jsonObject;
+    //                     try
+    //                     {
+    //                         jsonObject = JObject.Parse(jsonPayload);
+    //                     }
+    //                     catch (JsonException ex)
+    //                     {
+    //                         Console.WriteLine($"[{DateTime.Now}] JSON Parse Error: {ex.Message}");
+    //                         context.Response.StatusCode = 400;
+    //                         context.Response.ContentType = "application/json";
+    //                         context.Response.Write(JsonConvert.SerializeObject(new { success = false, message = "Invalid JSON format" }));
+    //                         context.Response.Flush();
+    //                         context.CompleteRequest();
+    //                         return;
+    //                     }
+    //
+    //                     // Kiểm tra $type ngay từ đầu
+    //                     if (jsonObject.Descendants().Any(token => token.Type == JTokenType.Property && token.Path.Contains("$type")))
+    //                     {
+    //                         LogSuspiciousActivity("Phát hiện $type trong payload: " + jsonPayload);
+    //                         context.Response.StatusCode = 400;
+    //                         context.Response.ContentType = "application/json";
+    //                         context.Response.Write(JsonConvert.SerializeObject(new { success = false, message = "Phát hiện payload nguy hiểm. Yêu cầu bị chặn (type).", sandboxResult = "Initial $type detection" }));
+    //                         context.Response.Flush();
+    //                         context.CompleteRequest();
+    //                         return;
+    //                     }
+    //
+    //                     // Đưa payload vào sandbox để phân tích
+    //                     string sandboxResult = ProcessInSandbox(jsonObject.ToString());
+    //                     Console.WriteLine($"[{DateTime.Now}] Sandbox Result: {sandboxResult}");
+    //
+    //                     // Chỉ chặn nếu sandbox phát hiện $type, RCE, hoặc lỗi deserialization rõ ràng
+    //                     if (sandboxResult.Contains("potential RCE") || sandboxResult.Contains("$type detected") || sandboxResult.Contains("Deserialization failed"))
+    //                     {
+    //                         LogSuspiciousActivity("Phát hiện payload nguy hiểm: " + jsonPayload);
+    //                         context.Response.StatusCode = 400;
+    //                         context.Response.ContentType = "application/json";
+    //                         context.Response.Write(JsonConvert.SerializeObject(new { success = false, message = "Phát hiện payload nguy hiểm. Yêu cầu bị chặn.", sandboxResult = sandboxResult }));
+    //                         context.Response.Flush();
+    //                         context.CompleteRequest();
+    //                         return;
+    //                     }
+    //                     else if (sandboxResult.Contains("Sandbox failed"))
+    //                     {
+    //                         Console.WriteLine($"[{DateTime.Now}] Sandbox failed but no deserialization threat detected, continuing with caution: {jsonPayload}");
+    //                         context.Context.Items["SanitizedPayload"] = jsonPayload; // Tiếp tục nếu chỉ lỗi tải assembly
+    //                     }
+    //                     else
+    //                     {
+    //                         Console.WriteLine($"[{DateTime.Now}] Payload an toàn, tiếp tục xử lý.");
+    //                         context.Context.Items["SanitizedPayload"] = jsonPayload;
+    //                     }
+    //                 }
+    //             }
+    //             catch (Exception ex)
+    //             {
+    //                 LogSuspiciousActivity($"Lỗi khi kiểm tra yêu cầu: {ex.Message}");
+    //                 context.Response.StatusCode = 500;
+    //                 context.Response.ContentType = "application/json";
+    //                 context.Response.Write(JsonConvert.SerializeObject(new { success = false, message = $"Lỗi xử lý yêu cầu: {ex.Message}" }));
+    //                 context.Response.Flush();
+    //                 context.CompleteRequest();
+    //             }
+    //         }
+    //     }
+    //
+    //     private string ProcessInSandbox(string payload)
+    //     {
+    //         if (_sandboxDomain == null)
+    //         {
+    //             var currentDomain = AppDomain.CurrentDomain;
+    //             var setup = new AppDomainSetup
+    //             {
+    //                 ApplicationBase = currentDomain.BaseDirectory,
+    //                 PrivateBinPath = currentDomain.BaseDirectory,
+    //                 DisallowBindingRedirects = false,
+    //                 DisallowCodeDownload = true,
+    //                 ConfigurationFile = currentDomain.SetupInformation.ConfigurationFile
+    //             };
+    //
+    //             var permissions = new PermissionSet(PermissionState.None);
+    //             permissions.AddPermission(new SecurityPermission(SecurityPermissionFlag.Execution));
+    //             permissions.AddPermission(new ReflectionPermission(ReflectionPermissionFlag.RestrictedMemberAccess));
+    //             permissions.AddPermission(new FileIOPermission(FileIOPermissionAccess.Read | FileIOPermissionAccess.PathDiscovery, currentDomain.BaseDirectory));
+    //
+    //             _sandboxDomain = AppDomain.CreateDomain("SandboxDomain", null, setup, permissions);
+    //             Console.WriteLine($"[{DateTime.Now}] Sandbox domain created with base: {currentDomain.BaseDirectory}");
+    //         }
+    //
+    //         try
+    //         {
+    //             var sandbox = (SandboxProxy)_sandboxDomain.CreateInstanceAndUnwrap(
+    //                 Assembly.GetExecutingAssembly().GetName().Name,
+    //                 typeof(SandboxProxy).FullName);
+    //
+    //             return sandbox.AnalyzeAndBlock(payload);
+    //         }
+    //         catch (Exception ex)
+    //         {
+    //             Console.WriteLine($"[{DateTime.Now}] Sandbox Error: {ex.Message}");
+    //             return $"Sandbox failed: {ex.Message}";
+    //         }
+    //     }
+    //
+    //     private void LogSuspiciousActivity(string message)
+    //     {
+    //         Console.WriteLine($"[{DateTime.Now}] Suspicious Activity: {message}");
+    //     }
+    // }
 
-        public void Init(HttpApplication context)
-        {
-            context.BeginRequest += (sender, e) => CheckRequest(context);
-        }
-
-        public void Dispose()
-        {
-            if (_sandboxDomain != null && _sandboxDomain != AppDomain.CurrentDomain)
-            {
-                AppDomain.Unload(_sandboxDomain);
-            }
-        }
-
-        private void CheckRequest(HttpApplication context)
-        {
-            var request = context.Request;
-
-            // Chỉ xử lý các yêu cầu POST gửi đến Login hoặc Signup
-            if (request.HttpMethod == "POST" &&
-                (request.Url.AbsolutePath.EndsWith("Login", StringComparison.OrdinalIgnoreCase) ||
-                 request.Url.AbsolutePath.EndsWith("Signup", StringComparison.OrdinalIgnoreCase)))
-            {
-                try
-                {
-                    // Đọc dữ liệu thô từ request
-                    string jsonPayload;
-                    request.InputStream.Position = 0;
-                    using (var reader = new StreamReader(request.InputStream))
-                    {
-                        jsonPayload = reader.ReadToEnd();
-                    }
-
-                    // Log payload thô để debug
-                    System.Diagnostics.Debug.WriteLine($"[{DateTime.Now}] Raw Payload: {jsonPayload}");
-
-                    if (!string.IsNullOrEmpty(jsonPayload))
-                    {
-                        // Thử parse thành JSON
-                        JObject jsonObject;
-                        try
-                        {
-                            jsonObject = JObject.Parse(jsonPayload);
-                        }
-                        catch (JsonException ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[{DateTime.Now}] JSON Parse Error: {ex.Message}");
-                            context.Context.Items["SanitizedPayload"] = jsonPayload;
-                            return;
-                        }
-
-                        // Kiểm tra $type (dấu hiệu deserialization nguy hiểm)
-                        if (jsonObject.Descendants().Any(token => token.Type == JTokenType.Property && token.Path.Contains("$type")))
-                        {
-                            LogSuspiciousActivity("Phát hiện payload chứa $type: " + jsonPayload);
-                            context.Response.StatusCode = 400;
-                            context.Response.ContentType = "application/json";
-                            context.Response.Write(JsonConvert.SerializeObject(new { success = false, message = "Phát hiện payload độc hại. Yêu cầu bị chặn (type)." }));
-                            context.Response.Flush();
-                            context.CompleteRequest();
-                            return;
-                        }
-
-                        // Kiểm tra chuỗi base64 dài trong username hoặc password
-                        JToken usernameToken = jsonObject["username"] ?? jsonObject["Username"];
-                        JToken passwordToken = jsonObject["password"] ?? jsonObject["Password"];
-
-                        if (usernameToken != null && IsPotentialBase64Attack(usernameToken.ToString()) ||
-                            passwordToken != null && IsPotentialBase64Attack(passwordToken.ToString()))
-                        {
-                            LogSuspiciousActivity("Phát hiện chuỗi base64 dài hoặc nguy hiểm: " + jsonPayload);
-                            string sandboxResult = ProcessInSandbox(jsonObject.ToString());
-                            context.Response.StatusCode = 400;
-                            context.Response.ContentType = "application/json";
-                            context.Response.Write(JsonConvert.SerializeObject(new { success = false, message = "Phát hiện payload không hợp lệ. Yêu cầu bị chặn (base64).", sandboxResult = sandboxResult }));
-                            context.Response.Flush();
-                            context.CompleteRequest();
-                            return;
-                        }
-
-                        // Nếu không có vấn đề, lưu payload đã kiểm tra
-                        System.Diagnostics.Debug.WriteLine($"[{DateTime.Now}] Payload hợp lệ, tiếp tục xử lý.");
-                        context.Context.Items["SanitizedPayload"] = jsonPayload;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    LogSuspiciousActivity($"Lỗi khi kiểm tra yêu cầu: {ex.Message}");
-                    context.Response.StatusCode = 500;
-                    context.Response.ContentType = "application/json";
-                    context.Response.Write(JsonConvert.SerializeObject(new { success = false, message = $"Lỗi xử lý yêu cầu: {ex.Message}" }));
-                    context.Response.Flush();
-                    context.CompleteRequest();
-                }
-            }
-        }
-
-        private bool IsPotentialBase64Attack(string input)
-        {
-            if (string.IsNullOrEmpty(input) || input.Length <= 100) return false; //ngưỡng
-
-            // Kiểm tra định dạng base64
-            if (!System.Text.RegularExpressions.Regex.IsMatch(input, @"^[A-Za-z0-9\+/]+={0,2}$"))
-            {
-                System.Diagnostics.Debug.WriteLine("Base64 check failed: Invalid characters");
-                return false;
-            }
-
-            try
-            {
-                Convert.FromBase64String(input);
-                System.Diagnostics.Debug.WriteLine("Base64 check passed: Valid base64 string with length > 100");
-                return true; // Chuỗi base64 dài được coi là nguy hiểm
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine("Base64 check failed: " + ex.Message);
-                return false;
-            }
-        }
-
-        private string ProcessInSandbox(string payload)
-        {
-            if (_sandboxDomain == null)
-            {
-                var setup = new AppDomainSetup
-                {
-                    ApplicationBase = AppDomain.CurrentDomain.BaseDirectory,
-                    PrivateBinPath = AppDomain.CurrentDomain.BaseDirectory,
-                    DisallowBindingRedirects = false, // Cho phép tải assembly cần thiết
-                    DisallowCodeDownload = true
-                };
-
-                var permissions = new PermissionSet(PermissionState.None);
-                permissions.AddPermission(new SecurityPermission(SecurityPermissionFlag.Execution));
-                permissions.AddPermission(new ReflectionPermission(ReflectionPermissionFlag.RestrictedMemberAccess));
-                permissions.AddPermission(new FileIOPermission(FileIOPermissionAccess.Read, AppDomain.CurrentDomain.BaseDirectory)); // Quyền đọc file cơ bản
-
-                _sandboxDomain = AppDomain.CreateDomain("SandboxDomain", null, setup, permissions);
-            }
-
-            try
-            {
-                var sandbox = (SandboxProxy)_sandboxDomain.CreateInstanceAndUnwrap(
-                    Assembly.GetExecutingAssembly().FullName,
-                    typeof(SandboxProxy).FullName);
-
-                return sandbox.AnalyzeAndBlock(payload);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[{DateTime.Now}] Sandbox Error: {ex.Message}");
-                return $"Sandbox failed: {ex.Message}";
-            }
-        }
-
-        private void LogSuspiciousActivity(string message)
-        {
-            Console.WriteLine($"[{DateTime.Now}] Suspicious Activity: {message}");
-        }
-    }
-
-    internal class SandboxProxy : MarshalByRefObject
+    public class SandboxProxy : MarshalByRefObject
     {
         public string AnalyzeAndBlock(string payload)
         {
@@ -185,38 +174,73 @@ namespace Demoweb.Middleware
             {
                 JObject jsonObject = JObject.Parse(payload);
                 JToken usernameToken = jsonObject["username"] ?? jsonObject["Username"];
-                if (usernameToken != null && usernameToken.Type == JTokenType.String)
+                JToken passwordToken = jsonObject["password"] ?? jsonObject["Password"];
+
+                // Kiểm tra $type trong toàn bộ payload
+                if (jsonObject.Descendants().Any(token => token.Type == JTokenType.Property && token.Path.Contains("$type")))
+                {
+                    Console.WriteLine($"[{DateTime.Now}] Sandbox: $type detected in payload");
+                    return "$type detected, potential deserialization attack";
+                }
+
+                // Kiểm tra username và password
+                if (usernameToken != null && usernameToken.Type == JTokenType.String && IsBase64(usernameToken.ToString()))
                 {
                     string base64String = usernameToken.ToString();
-                    if (IsBase64(base64String))
+                    byte[] bytes = Convert.FromBase64String(base64String);
+                    using (var ms = new MemoryStream(bytes))
                     {
-                        byte[] bytes = Convert.FromBase64String(base64String);
-                        using (var ms = new MemoryStream(bytes))
+                        var bf = new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
+                        object deserializedObject = null;
+                        try
                         {
-                            var bf = new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
-                            object deserializedObject = null;
-                            try
-                            {
-                                deserializedObject = bf.Deserialize(ms);
-                                Console.WriteLine($"[{DateTime.Now}] Sandbox: Payload deserialized to {deserializedObject?.GetType().FullName}");
+                            deserializedObject = bf.Deserialize(ms);
+                            Console.WriteLine($"[{DateTime.Now}] Sandbox: Payload deserialized to {deserializedObject?.GetType().FullName}");
 
-                                // Kiểm tra nếu đối tượng chứa hành vi nguy hiểm (ví dụ: Process.Start)
-                                if (deserializedObject != null && CheckForDangerousMethods(deserializedObject))
-                                {
-                                    Console.WriteLine($"[{DateTime.Now}] Sandbox: Detected potential RCE with method calls");
-                                    return "Deserialized successfully, but blocked due to potential RCE (e.g., Process.Start)";
-                                }
-                                return $"Deserialized successfully to {deserializedObject?.GetType().FullName}, no dangerous methods detected";
-                            }
-                            catch (Exception ex)
+                            // Kiểm tra hành vi nguy hiểm
+                            if (deserializedObject != null && CheckForDangerousMethods(deserializedObject))
                             {
-                                Console.WriteLine($"[{DateTime.Now}] Sandbox Deserialization Error: {ex.Message}");
-                                return $"Deserialization failed: {ex.Message}";
+                                Console.WriteLine($"[{DateTime.Now}] Sandbox: Detected potential RCE with method calls");
+                                return "Deserialized successfully, but blocked due to potential RCE (e.g., Process.Start)";
                             }
+                            return $"Deserialized successfully to {deserializedObject?.GetType().FullName}, no dangerous methods detected";
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[{DateTime.Now}] Sandbox Deserialization Error: {ex.Message}");
+                            return $"Deserialization failed: {ex.Message}";
                         }
                     }
                 }
-                return "No deserialization performed";
+                else if (passwordToken != null && passwordToken.Type == JTokenType.String && IsBase64(passwordToken.ToString()))
+                {
+                    string base64String = passwordToken.ToString();
+                    byte[] bytes = Convert.FromBase64String(base64String);
+                    using (var ms = new MemoryStream(bytes))
+                    {
+                        var bf = new System.Runtime.Serialization.Formatters.Binary.BinaryFormatter();
+                        object deserializedObject = null;
+                        try
+                        {
+                            deserializedObject = bf.Deserialize(ms);
+                            Console.WriteLine($"[{DateTime.Now}] Sandbox: Payload deserialized to {deserializedObject?.GetType().FullName}");
+
+                            // Kiểm tra hành vi nguy hiểm
+                            if (deserializedObject != null && CheckForDangerousMethods(deserializedObject))
+                            {
+                                Console.WriteLine($"[{DateTime.Now}] Sandbox: Detected potential RCE with method calls");
+                                return "Deserialized successfully, but blocked due to potential RCE (e.g., Process.Start)";
+                            }
+                            return $"Deserialized successfully to {deserializedObject?.GetType().FullName}, no dangerous methods detected";
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[{DateTime.Now}] Sandbox Deserialization Error: {ex.Message}");
+                            return $"Deserialization failed: {ex.Message}";
+                        }
+                    }
+                }
+                return "No deserialization performed, payload appears safe";
             }
             catch (Exception ex)
             {
